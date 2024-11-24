@@ -7,7 +7,9 @@
 
 import SwiftUI
 
-struct BlockModel {
+struct BreakModel {
+    let numOfBlock: Int
+    
     var initPosition = CGPoint.zero
     var frameSize = CGSize.zero
     var deltaX = 0
@@ -19,15 +21,28 @@ struct BlockModel {
     var paddleSize = CGSize.zero
     var paddlePosition = CGPoint.zero
     
+    var block: [BlockModel] = []
+    
+    init(numOfBlock: Int = 1){
+        self.numOfBlock = numOfBlock
+        block = [BlockModel](repeating: BlockModel(), count: numOfBlock)
+    }
+    
+}
+
+struct BlockModel : Hashable{
     var blockSize = CGSize.zero
     var blockPosition = CGPoint.zero
 }
 
 struct BlockBreak: View {
-    @State private var blockBreak = BlockModel()
+    @State private var blockBreak: BreakModel = BreakModel()
     @State private var timer: Timer?
-    @State private var labelText = "Swipe paddle"
-    @State private var isClashed: Bool = false
+    @State private var labelText = ""
+    @State private var isCleared = 0
+    @State private var isInitialized = false
+    @State private var numOfBlock = 3
+    @State private var deltaFlag = 0
     
     var body: some View {
         GeometryReader { geometry in
@@ -35,31 +50,52 @@ struct BlockBreak: View {
                 VStack{
                     Text("Tiny Fake Block Breaking")
                     HStack{
-                        Button("init") {
+                        Button("init", systemImage: "arrow.counterclockwise") {
+                            blockBreak = BreakModel(numOfBlock: numOfBlock)
                             blockBreak.initPosition.x = geometry.frame(in: .local).midX
                             blockBreak.initPosition.y = geometry.frame(in: .local).midY
-                            blockBreak.frameSize.width = geometry.frame(in: .local).width*0.95
+                            blockBreak.frameSize.width = geometry.frame(in: .local).width*0.9
                             blockBreak.frameSize.height = geometry.frame(in: .local).height*0.8
                             initGame()
                         }
-                        Button("start") {
-                            if (blockBreak.ballSize > 5){
-                                timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+                        Button("start", systemImage: "play.fill") {
+                            if (isInitialized){
+                                labelText = "Drag paddle"
+                                timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                                     if (blockBreak.position.y + blockBreak.ballSize > blockBreak.initPosition.y + blockBreak.frameSize.height/2){
-                                        blockBreak.ballSize = 0
-                                        print("game over")
                                         labelText = "Game Over"
+                                        isInitialized = false
+                                        blockBreak.ballSize = 0
                                         timer?.invalidate()
                                     }
-                                    
-                                    if (intersect(position: blockBreak.blockPosition, size: blockBreak.blockSize, ballPosition: blockBreak.position, ballSize: blockBreak.ballSize)){
-                                        blockBreak.deltaY = blockBreak.deltaY * -1
-                                        clearBlock()
-                                        print("ball clash with block")
+                                    for i in 0 ..< blockBreak.block.count {
+                                        if (intersect(position: blockBreak.block[i].blockPosition, size: blockBreak.block[i].blockSize, ballPosition: blockBreak.position, ballSize: blockBreak.ballSize)){
+                                            blockBreak.deltaY = blockBreak.deltaY * -1
+                                            blockBreak.block[i].blockSize = CGSize.zero
+//                                            print("ball clash with block")
+                                            isCleared -= 1
+                                            if (isCleared == 0) {
+                                                labelText = "Game Clear!!"
+                                                isInitialized = false
+                                                blockBreak.ballSize = 0
+                                                timer?.invalidate()
+                                            }
+                                        }
                                     }
-                                    else if (intersect(position: blockBreak.paddlePosition, size: blockBreak.paddleSize, ballPosition: blockBreak.position, ballSize: blockBreak.ballSize)){
+                                    
+                                    if (intersect(position: blockBreak.paddlePosition, size: blockBreak.paddleSize, ballPosition: blockBreak.position, ballSize: blockBreak.ballSize)){
                                         blockBreak.deltaY = blockBreak.deltaY * -1
-                                        print("ball clash with paddle")
+                                        if (deltaFlag == 1){
+                                            if (blockBreak.deltaX < 0) {
+                                                blockBreak.deltaX = blockBreak.deltaX * -1
+                                            }
+                                        }
+                                        else if (deltaFlag == -1){
+                                            if (blockBreak.deltaX > 0) {
+                                                blockBreak.deltaX = blockBreak.deltaX * -1
+                                            }
+                                        }
+//                                        print("ball clash with paddle")
                                     }
                                     else {
                                         if (blockBreak.position.y - blockBreak.ballSize < blockBreak.initPosition.y - blockBreak.frameSize.height/2){
@@ -72,29 +108,24 @@ struct BlockBreak: View {
                                     blockBreak.position.x +=  CGFloat(blockBreak.deltaX)
                                     blockBreak.position.y +=  CGFloat(blockBreak.deltaY)
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
-                                    print("time out")
-                                    labelText = "Time Out"
-                                    timer?.invalidate()
-                                }
-                            }
-                            else {
-                                print ("too small ball")
                             }
                         }
-                        Button("stop") {
+                        Button("stop", systemImage: "stop.fill") {
                             timer?.invalidate()
+                            labelText = "Press Start"
                         }
                     }
                     Spacer()
                 }
                 
                 ZStack {
-                    if !isClashed {
-                        Rectangle()
-                            .fill(.brown)
-                            .frame(width: blockBreak.blockSize.width, height: blockBreak.blockSize.height)
-                            .position(x: blockBreak.blockPosition.x, y: blockBreak.blockPosition.y)
+                    if (isInitialized){
+                        ForEach (blockBreak.block, id: \.self){ block in
+                            Rectangle()
+                                .fill(.brown)
+                                .frame(width: block.blockSize.width, height: block.blockSize.height)
+                                .position(x: block.blockPosition.x, y: block.blockPosition.y)
+                        }
                     }
                     Rectangle()
                         .fill(.green)
@@ -102,17 +133,20 @@ struct BlockBreak: View {
                         .position(x: blockBreak.paddlePosition.x, y: blockBreak.paddlePosition.y)
                         .gesture(
                             DragGesture()
-                                .onEnded { gesture in
-                                    if gesture.translation.width > 0 {
-                                        if (blockBreak.paddlePosition.x + blockBreak.paddleSize.width/2 < blockBreak.initPosition.x + blockBreak.frameSize.width/2){
-                                            blockBreak.paddlePosition.x += blockBreak.ballSize * 2
-                                        }
-                                        labelText = "右"
+                                .onChanged { gesture in
+                                    if (gesture.location.x - blockBreak.paddlePosition.x > 0) {
+                                        deltaFlag = 1
+//                                        labelText = "右"
+                                    } else if (gesture.location.x - blockBreak.paddlePosition.x < 0){
+                                        deltaFlag = -1
+//                                        labelText = "左"
                                     } else {
-                                        if (blockBreak.paddlePosition.x - blockBreak.paddleSize.width/2 > blockBreak.initPosition.x - blockBreak.frameSize.width/2){
-                                            blockBreak.paddlePosition.x -= blockBreak.ballSize * 2
-                                        }
-                                        labelText = "左"
+                                        deltaFlag = 0
+                                    }
+                                    if ((gesture.location.x - blockBreak.paddleSize.width/2) > 0
+                                        && gesture.location.x < (blockBreak.frameSize.width)){
+                                        blockBreak.paddlePosition.x = gesture.location.x
+//                                        print("gesture.location.x\(gesture.location.x)")
                                     }
                                 }
                         )
@@ -128,18 +162,23 @@ struct BlockBreak: View {
                 }
                 VStack{
                     Spacer()
-                    Text(labelText).padding()
+                    Grid{
+                        GridRow{
+                            Text("Number of Blocks:  \(numOfBlock)")
+                            Stepper("Number of Blocks:\(numOfBlock)", value: $numOfBlock, in: 1...5)
+                                .labelsHidden()
+                        }
+                    }
+                    Text(labelText)
                 }
             }
         }
     }
     
-    
     private func initGame(){
-        isClashed = false
         blockBreak.position.x = blockBreak.initPosition.x
         blockBreak.position.y = blockBreak.initPosition.y
-        blockBreak.ballSize = 20
+        blockBreak.ballSize = 15
         
         blockBreak.deltaX = Int(blockBreak.ballSize * -1)
         blockBreak.deltaY = Int(blockBreak.ballSize)
@@ -149,15 +188,17 @@ struct BlockBreak: View {
         blockBreak.paddleSize.width = blockBreak.frameSize.width/4
         blockBreak.paddleSize.height = blockBreak.ballSize
         
-        blockBreak.blockPosition.x = blockBreak.initPosition.x
-        blockBreak.blockPosition.y = blockBreak.initPosition.y - blockBreak.frameSize.height/3
-        blockBreak.blockSize.width = 80
-        blockBreak.blockSize.height = blockBreak.ballSize
-    }
-    
-    private func clearBlock(){
-        isClashed = true
-        blockBreak.blockSize = CGSize.zero
+        for num in 0 ..< blockBreak.block.count{
+            blockBreak.block[num].blockSize.width = blockBreak.frameSize.width / CGFloat(blockBreak.numOfBlock * 2)
+            blockBreak.block[num].blockSize.height = blockBreak.ballSize*1.5
+            blockBreak.block[num].blockPosition.x = ((blockBreak.frameSize.width / CGFloat(blockBreak.numOfBlock * 2)) * CGFloat(num))*2 + blockBreak.frameSize.width / CGFloat(blockBreak.numOfBlock * 2) + blockBreak.ballSize
+            blockBreak.block[num].blockPosition.y = blockBreak.initPosition.y - blockBreak.frameSize.height/3
+        }
+        
+        isCleared = blockBreak.block.count
+        isInitialized = true
+        timer?.invalidate()
+        labelText = "Press Start"
     }
     
     private func intersect(position: CGPoint, size: CGSize, ballPosition: CGPoint, ballSize: CGFloat) -> Bool{
@@ -175,7 +216,7 @@ struct BlockBreak: View {
         
         return(result)
     }
-    }
+}
 
 #Preview {
     BlockBreak()
